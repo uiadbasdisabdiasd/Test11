@@ -43,6 +43,9 @@ jobs:
             exit 1
           fi
 
+      - name: Ensure gradlew is executable
+        run: chmod +x ./gradlew
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
@@ -52,6 +55,8 @@ jobs:
         env:
           BUILD_VARIANT_INPUT: ${{ github.event.inputs.build_variant || 'Release' }}
         run: ./gradlew :app:assemble${{ env.BUILD_VARIANT_INPUT }} --no-daemon
+        # If gradlew is inside subfolder, add working-directory like:
+        # working-directory: ./app
 
       - name: Create Release Tag
         id: create_tag
@@ -77,8 +82,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./app/build/outputs/apk/${{ github.event.inputs.build_variant || 'release' }}/app-${{ github.event.inputs.build_variant || 'release' }}.apk
-          asset_name: MusicPlayer-${{ env.TAG_NAME }}-${{ github.event.inputs.build_variant || 'release' }}.apk
+          asset_path: ./app/build/outputs/apk/${{ github.event.inputs.build_variant || 'release' | toLowerCase }}/app-${{ github.event.inputs.build_variant || 'release' | toLowerCase }}.apk
+          asset_name: MusicPlayer-${{ env.TAG_NAME }}-${{ github.event.inputs.build_variant || 'release' | toLowerCase }}.apk
           asset_content_type: application/vnd.android.package-archive
 
       - name: Upload Release Asset (AAB)
@@ -88,6 +93,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./app/build/outputs/bundle/${{ github.event.inputs.build_variant || 'release' }}/app-${{ github.event.inputs.build_variant || 'release' }}.aab
-          asset_name: MusicPlayer-${{ env.TAG_NAME }}-${{ github.event.inputs.build_variant || 'release' }}.aab
+          asset_path: ./app/build/outputs/bundle/${{ github.event.inputs.build_variant || 'release' | toLowerCase }}/app-${{ github.event.inputs.build_variant || 'release' | toLowerCase }}.aab
+          asset_name: MusicPlayer-${{ env.TAG_NAME }}-${{ github.event.inputs.build_variant || 'release' | toLowerCase }}.aab
           asset_content_type: application/zip
