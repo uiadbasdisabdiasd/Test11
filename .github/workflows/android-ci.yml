@@ -83,7 +83,7 @@ jobs:
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BUILD_VARIANT_INPUT_LOWER: ${{ lower(github.event.inputs.build_variant || 'Release') }}
+          BUILD_VARIANT_INPUT_LOWER: ${{ github.event_name == 'workflow_dispatch' && lower(github.event.inputs.build_variant) || lower('Release') }}
           APP_NAME: MusicPlayer
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
@@ -98,7 +98,7 @@ jobs:
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BUILD_VARIANT_INPUT_LOWER: ${{ lower(github.event.inputs.build_variant || 'Release') }}
+          BUILD_VARIANT_INPUT_LOWER: ${{ github.event_name == 'workflow_dispatch' && lower(github.event.inputs.build_variant) || lower('Release') }}
           APP_NAME: MusicPlayer
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
