@@ -21,16 +21,16 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v2
+        uses: android-actions/setup-android@v3
 
       - name: Accept Android SDK licenses
         run: |
@@ -38,20 +38,29 @@ jobs:
             yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses
           elif [ -d "$ANDROID_HOME/tools/bin" ]; then
             yes | $ANDROID_HOME/tools/bin/sdkmanager --licenses
+          elif [ -d "$ANDROID_HOME/cmdline-tools/latest/bin" ]; then
+            yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
           else
             echo "Could not find sdkmanager"
             exit 1
           fi
 
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.2'
 
       - name: Build with Gradle
         env:
           BUILD_VARIANT_INPUT: ${{ github.event.inputs.build_variant || 'Release' }}
-        run: ./gradlew :app:assemble${{ env.BUILD_VARIANT_INPUT }} --no-daemon
+        run: |
+          if [ -f "./gradlew" ]; then
+            ./gradlew :app:assemble${{ env.BUILD_VARIANT_INPUT }} --no-daemon
+          else
+            echo "gradlew not found, trying with gradle command"
+            gradle :app:assemble${{ env.BUILD_VARIANT_INPUT }} --no-daemon
+          fi
 
       - name: Create Release Tag
         id: create_tag
@@ -61,33 +70,46 @@ jobs:
       - name: Create GitHub Release
         id: create_release
         if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_variant == 'Release')
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ env.TAG_NAME }}
-          release_name: Release ${{ env.TAG_NAME }}
+          name: Release ${{ env.TAG_NAME }}
           draft: false
           prerelease: false
 
-      - name: Upload Release Asset (APK)
+      - name: Find APK file
+        id: find_apk
         if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_variant == 'Release')
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./app/build/outputs/apk/${{ github.event.inputs.build_variant || 'release' }}/app-${{ github.event.inputs.build_variant || 'release' }}.apk
-          asset_name: MusicPlayer-${{ env.TAG_NAME }}-${{ github.event.inputs.build_variant || 'release' }}.apk
-          asset_content_type: application/vnd.android.package-archive
+        run: |
+          VARIANT_LOWER=$(echo "${{ github.event.inputs.build_variant || 'release' }}" | tr '[:upper:]' '[:lower:]')
+          APK_PATH=$(find ./app/build/outputs/apk -name "*.apk" -type f | head -1)
+          if [ -z "$APK_PATH" ]; then
+            APK_PATH="./app/build/outputs/apk/${VARIANT_LOWER}/app-${VARIANT_LOWER}.apk"
+          fi
+          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
+          echo "Found APK at: $APK_PATH"
 
-      - name: Upload Release Asset (AAB)
+      - name: Find AAB file
+        id: find_aab
         if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_variant == 'Release')
-        uses: actions/upload-release-asset@v1
+        run: |
+          VARIANT_LOWER=$(echo "${{ github.event.inputs.build_variant || 'release' }}" | tr '[:upper:]' '[:lower:]')
+          AAB_PATH=$(find ./app/build/outputs/bundle -name "*.aab" -type f | head -1)
+          if [ -z "$AAB_PATH" ]; then
+            AAB_PATH="./app/build/outputs/bundle/${VARIANT_LOWER}/app-${VARIANT_LOWER}.aab"
+          fi
+          echo "AAB_PATH=$AAB_PATH" >> $GITHUB_ENV
+          echo "Found AAB at: $AAB_PATH"
+
+      - name: Upload Release Assets
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_variant == 'Release')
+        uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./app/build/outputs/bundle/${{ github.event.inputs.build_variant || 'release' }}/app-${{ github.event.inputs.build_variant || 'release' }}.aab
-          asset_name: MusicPlayer-${{ env.TAG_NAME }}-${{ github.event.inputs.build_variant || 'release' }}.aab
-          asset_content_type: application/zip
+          tag_name: ${{ env.TAG_NAME }}
+          files: |
+            ${{ env.APK_PATH }}
+            ${{ env.AAB_PATH }}
