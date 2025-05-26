@@ -1,4 +1,4 @@
-name: Android CI and Releases
+name: Android CI and Release
 
 on:
   push:
@@ -34,11 +34,13 @@ jobs:
         #   yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || \
         #   yes | $ANDROID_SDK_ROOT/tools/bin/sdkmanager --licenses
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x ./gradlew
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.2' # Specify a recent, compatible Gradle version. Check project's build.gradle for hints if any.
 
       - name: Build with Gradle (Release)
-        run: ./gradlew assembleRelease --no-daemon 
+        run: gradle :app:assembleRelease --no-daemon
         # Add --no-daemon to ensure Gradle exits cleanly in CI environments.
         # Note: This assumes you have set up signing configurations in your app's build.gradle.
         # If not, this will build an unsigned release APK/AAB.
