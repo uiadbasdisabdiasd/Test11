@@ -18,6 +18,7 @@ on:
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -33,7 +34,6 @@ jobs:
 
       - name: Accept Android SDK licenses
         run: |
-          export JAVA_OPTS="--add-modules java.xml.bind"
           if [ -d "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" ]; then
             yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses
           elif [ -d "$ANDROID_HOME/tools/bin" ]; then
@@ -48,24 +48,19 @@ jobs:
         with:
           gradle-version: '8.2'
 
-      - name: Set Build Variant (and lowercase variant)
-        id: build_variant
-        run: |
-          VARIANT="${{ github.event.inputs.build_variant || 'Release' }}"
-          echo "BUILD_VARIANT=$VARIANT" >> $GITHUB_ENV
-          echo "BUILD_VARIANT_LOWER=$(echo $VARIANT | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-
       - name: Build with Gradle
-        run: gradle :app:assemble${{ env.BUILD_VARIANT }} --no-daemon
+        env:
+          BUILD_VARIANT_INPUT: ${{ github.event.inputs.build_variant || 'Release' }}
+        run: ./gradlew :app:assemble${{ env.BUILD_VARIANT_INPUT }} --no-daemon
 
       - name: Create Release Tag
         id: create_tag
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && env.BUILD_VARIANT == 'Release')
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_variant == 'Release')
         run: echo "TAG_NAME=release-$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_ENV
 
       - name: Create GitHub Release
         id: create_release
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && env.BUILD_VARIANT == 'Release')
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_variant == 'Release')
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -76,23 +71,23 @@ jobs:
           prerelease: false
 
       - name: Upload Release Asset (APK)
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && env.BUILD_VARIANT == 'Release')
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_variant == 'Release')
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./app/build/outputs/apk/${{ env.BUILD_VARIANT_LOWER }}/app-${{ env.BUILD_VARIANT_LOWER }}.apk
-          asset_name: MusicPlayer-${{ env.TAG_NAME }}-${{ env.BUILD_VARIANT_LOWER }}.apk
+          asset_path: ./app/build/outputs/apk/${{ github.event.inputs.build_variant || 'release' }}/app-${{ github.event.inputs.build_variant || 'release' }}.apk
+          asset_name: MusicPlayer-${{ env.TAG_NAME }}-${{ github.event.inputs.build_variant || 'release' }}.apk
           asset_content_type: application/vnd.android.package-archive
 
       - name: Upload Release Asset (AAB)
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && env.BUILD_VARIANT == 'Release')
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_variant == 'Release')
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./app/build/outputs/bundle/${{ env.BUILD_VARIANT_LOWER }}/app-${{ env.BUILD_VARIANT_LOWER }}.aab
-          asset_name: MusicPlayer-${{ env.TAG_NAME }}-${{ env.BUILD_VARIANT_LOWER }}.aab
+          asset_path: ./app/build/outputs/bundle/${{ github.event.inputs.build_variant || 'release' }}/app-${{ github.event.inputs.build_variant || 'release' }}.aab
+          asset_name: MusicPlayer-${{ env.TAG_NAME }}-${{ github.event.inputs.build_variant || 'release' }}.aab
           asset_content_type: application/zip
