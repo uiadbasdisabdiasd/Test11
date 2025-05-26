@@ -26,13 +26,16 @@ jobs:
         #   cmake-version: # Optional: specify CMake version if needed
 
       - name: Accept Android SDK licenses
-        run: yes | $ANDROID_HOME/tools/bin/sdkmanager --licenses || true # Fallback for older SDK tools path
-        # For newer command-line tools, it might be:
-        # run: yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || true
-        # Or more robustly, find sdkmanager in cmdline-tools
-        # run: |
-        #   yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || \
-        #   yes | $ANDROID_SDK_ROOT/tools/bin/sdkmanager --licenses
+        run: |
+          export JAVA_OPTS="--add-modules java.xml.bind"
+          if [ -d "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" ]; then
+            yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses
+          elif [ -d "$ANDROID_HOME/tools/bin" ]; then
+            yes | $ANDROID_HOME/tools/bin/sdkmanager --licenses
+          else
+            echo "Could not find sdkmanager"
+            exit 1
+          fi
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
