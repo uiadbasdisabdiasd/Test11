@@ -59,10 +59,40 @@ jobs:
             chmod +x ./gradlew
           fi
 
+      - name: Check project structure
+        run: |
+          echo "Project structure:"
+          ls -la
+          echo "Gradle projects:"
+          ./gradlew projects
+
       - name: Build with Gradle
         env:
           BUILD_VARIANT_INPUT: ${{ github.event.inputs.build_variant || 'Release' }}
-        run: ./gradlew :app:assemble${{ env.BUILD_VARIANT_INPUT }} --no-daemon
+        run: |
+          echo "Available tasks:"
+          ./gradlew tasks --all | grep -i assemble
+          
+          # Try different project structures
+          if ./gradlew projects | grep -q ":app"; then
+            echo "Building :app module..."
+            ./gradlew :app:assemble${{ env.BUILD_VARIANT_INPUT }} --no-daemon
+          elif [ -d "app" ]; then
+            echo "Building app directory..."
+            ./gradlew app:assemble${{ env.BUILD_VARIANT_INPUT }} --no-daemon
+          else
+            echo "Building root project..."
+            ./gradlew assemble${{ env.BUILD_VARIANT_INPUT }} --no-daemon
+          fi
+
+      - name: Find built files
+        run: |
+          echo "Searching for APK files..."
+          find . -name "*.apk" -type f
+          echo "Searching for AAB files..."
+          find . -name "*.aab" -type f
+          echo "Build outputs structure:"
+          find . -path "*/build/outputs*" -type d
 
       - name: Create Release Tag
         id: create_tag
@@ -81,29 +111,57 @@ jobs:
           draft: false
           prerelease: false
 
-      - name: Find APK file
+      - name: Find and set APK path
         id: find_apk
         if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_variant == 'Release')
         run: |
           VARIANT_LOWER=$(echo "${{ github.event.inputs.build_variant || 'release' }}" | tr '[:upper:]' '[:lower:]')
-          APK_PATH=$(find ./app/build/outputs/apk -name "*.apk" -type f | head -1)
-          if [ -z "$APK_PATH" ]; then
+          
+          # Search for APK files in common locations
+          APK_PATH=""
+          
+          # Try app module first
+          if [ -f "./app/build/outputs/apk/${VARIANT_LOWER}/app-${VARIANT_LOWER}.apk" ]; then
             APK_PATH="./app/build/outputs/apk/${VARIANT_LOWER}/app-${VARIANT_LOWER}.apk"
+          elif [ -f "./app/build/outputs/apk/${VARIANT_LOWER}/app-${VARIANT_LOWER}-unsigned.apk" ]; then
+            APK_PATH="./app/build/outputs/apk/${VARIANT_LOWER}/app-${VARIANT_LOWER}-unsigned.apk"
+          else
+            # Search recursively for any APK
+            APK_PATH=$(find . -name "*.apk" -type f | head -1)
           fi
-          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
-          echo "Found APK at: $APK_PATH"
+          
+          if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
+            echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
+            echo "Found APK at: $APK_PATH"
+          else
+            echo "No APK file found"
+            echo "APK_PATH=" >> $GITHUB_ENV
+          fi
 
-      - name: Find AAB file
+      - name: Find and set AAB path
         id: find_aab
         if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_variant == 'Release')
         run: |
           VARIANT_LOWER=$(echo "${{ github.event.inputs.build_variant || 'release' }}" | tr '[:upper:]' '[:lower:]')
-          AAB_PATH=$(find ./app/build/outputs/bundle -name "*.aab" -type f | head -1)
-          if [ -z "$AAB_PATH" ]; then
+          
+          # Search for AAB files in common locations
+          AAB_PATH=""
+          
+          # Try app module first
+          if [ -f "./app/build/outputs/bundle/${VARIANT_LOWER}/app-${VARIANT_LOWER}.aab" ]; then
             AAB_PATH="./app/build/outputs/bundle/${VARIANT_LOWER}/app-${VARIANT_LOWER}.aab"
+          else
+            # Search recursively for any AAB
+            AAB_PATH=$(find . -name "*.aab" -type f | head -1)
           fi
-          echo "AAB_PATH=$AAB_PATH" >> $GITHUB_ENV
-          echo "Found AAB at: $AAB_PATH"
+          
+          if [ -n "$AAB_PATH" ] && [ -f "$AAB_PATH" ]; then
+            echo "AAB_PATH=$AAB_PATH" >> $GITHUB_ENV
+            echo "Found AAB at: $AAB_PATH"
+          else
+            echo "No AAB file found"
+            echo "AAB_PATH=" >> $GITHUB_ENV
+          fi
 
       - name: Upload Release Assets
         if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_variant == 'Release')
@@ -115,3 +173,4 @@ jobs:
           files: |
             ${{ env.APK_PATH }}
             ${{ env.AAB_PATH }}
+          fail_on_unmatched_files: false
