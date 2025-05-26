@@ -59,40 +59,63 @@ jobs:
             chmod +x ./gradlew
           fi
 
-      - name: Check project structure
+      - name: Check project structure and tasks
         run: |
           echo "Project structure:"
           ls -la
+          echo ""
           echo "Gradle projects:"
           ./gradlew projects
+          echo ""
+          echo "All available tasks:"
+          ./gradlew tasks --all
+          echo ""
+          echo "Android specific tasks:"
+          ./gradlew tasks --all | grep -i -E "(assemble|build|bundle)" || echo "No Android tasks found"
 
       - name: Build with Gradle
         env:
           BUILD_VARIANT_INPUT: ${{ github.event.inputs.build_variant || 'Release' }}
         run: |
-          echo "Available tasks:"
-          ./gradlew tasks --all | grep -i assemble
+          VARIANT_LOWER=$(echo "${{ env.BUILD_VARIANT_INPUT }}" | tr '[:upper:]' '[:lower:]')
           
-          # Try different project structures
-          if ./gradlew projects | grep -q ":app"; then
-            echo "Building :app module..."
-            ./gradlew :app:assemble${{ env.BUILD_VARIANT_INPUT }} --no-daemon
-          elif [ -d "app" ]; then
-            echo "Building app directory..."
-            ./gradlew app:assemble${{ env.BUILD_VARIANT_INPUT }} --no-daemon
+          echo "Attempting to build variant: ${{ env.BUILD_VARIANT_INPUT }}"
+          echo "Variant lowercase: $VARIANT_LOWER"
+          
+          # For single module projects, use root project tasks
+          if ./gradlew tasks --all | grep -q "assemble${{ env.BUILD_VARIANT_INPUT }}"; then
+            echo "Building with assemble${{ env.BUILD_VARIANT_INPUT }}..."
+            ./gradlew assemble${{ env.BUILD_VARIANT_INPUT }} --no-daemon --stacktrace
+          elif ./gradlew tasks --all | grep -q "assemble${VARIANT_LOWER}"; then
+            echo "Building with assemble${VARIANT_LOWER}..."
+            ./gradlew assemble${VARIANT_LOWER} --no-daemon --stacktrace
+          elif ./gradlew tasks --all | grep -q "assembleRelease"; then
+            echo "Building with assembleRelease..."
+            ./gradlew assembleRelease --no-daemon --stacktrace
+          elif ./gradlew tasks --all | grep -q "assembleDebug"; then
+            echo "Building with assembleDebug..."
+            ./gradlew assembleDebug --no-daemon --stacktrace
+          elif ./gradlew tasks --all | grep -q "build"; then
+            echo "Building with build task..."
+            ./gradlew build --no-daemon --stacktrace
           else
-            echo "Building root project..."
-            ./gradlew assemble${{ env.BUILD_VARIANT_INPUT }} --no-daemon
+            echo "No suitable build task found, trying generic assemble..."
+            ./gradlew assemble --no-daemon --stacktrace
           fi
 
       - name: Find built files
         run: |
           echo "Searching for APK files..."
-          find . -name "*.apk" -type f
+          find . -name "*.apk" -type f -exec ls -la {} \;
+          echo ""
           echo "Searching for AAB files..."
-          find . -name "*.aab" -type f
+          find . -name "*.aab" -type f -exec ls -la {} \;
+          echo ""
           echo "Build outputs structure:"
-          find . -path "*/build/outputs*" -type d
+          find . -path "*/build/outputs*" -type d -exec ls -la {} \; || echo "No build outputs found"
+          echo ""
+          echo "Full build directory structure:"
+          find . -name "build" -type d -exec find {} -type f -name "*.apk" -o -name "*.aab" \; 2>/dev/null || echo "No build artifacts found"
 
       - name: Create Release Tag
         id: create_tag
@@ -117,16 +140,27 @@ jobs:
         run: |
           VARIANT_LOWER=$(echo "${{ github.event.inputs.build_variant || 'release' }}" | tr '[:upper:]' '[:lower:]')
           
-          # Search for APK files in common locations
+          echo "Searching for APK files..."
           APK_PATH=""
           
-          # Try app module first
-          if [ -f "./app/build/outputs/apk/${VARIANT_LOWER}/app-${VARIANT_LOWER}.apk" ]; then
-            APK_PATH="./app/build/outputs/apk/${VARIANT_LOWER}/app-${VARIANT_LOWER}.apk"
-          elif [ -f "./app/build/outputs/apk/${VARIANT_LOWER}/app-${VARIANT_LOWER}-unsigned.apk" ]; then
-            APK_PATH="./app/build/outputs/apk/${VARIANT_LOWER}/app-${VARIANT_LOWER}-unsigned.apk"
-          else
-            # Search recursively for any APK
+          # Common locations for single module projects
+          POSSIBLE_PATHS=(
+            "./build/outputs/apk/${VARIANT_LOWER}/*.apk"
+            "./build/outputs/apk/${VARIANT_LOWER}/Test11-${VARIANT_LOWER}.apk"
+            "./build/outputs/apk/${VARIANT_LOWER}/app-${VARIANT_LOWER}.apk"
+            "./build/outputs/apk/${VARIANT_LOWER}/*.apk"
+            "./app/build/outputs/apk/${VARIANT_LOWER}/*.apk"
+          )
+          
+          for path_pattern in "${POSSIBLE_PATHS[@]}"; do
+            if ls $path_pattern 1> /dev/null 2>&1; then
+              APK_PATH=$(ls $path_pattern | head -1)
+              break
+            fi
+          done
+          
+          # Fallback: search recursively
+          if [ -z "$APK_PATH" ]; then
             APK_PATH=$(find . -name "*.apk" -type f | head -1)
           fi
           
@@ -144,14 +178,26 @@ jobs:
         run: |
           VARIANT_LOWER=$(echo "${{ github.event.inputs.build_variant || 'release' }}" | tr '[:upper:]' '[:lower:]')
           
-          # Search for AAB files in common locations
+          echo "Searching for AAB files..."
           AAB_PATH=""
           
-          # Try app module first
-          if [ -f "./app/build/outputs/bundle/${VARIANT_LOWER}/app-${VARIANT_LOWER}.aab" ]; then
-            AAB_PATH="./app/build/outputs/bundle/${VARIANT_LOWER}/app-${VARIANT_LOWER}.aab"
-          else
-            # Search recursively for any AAB
+          # Common locations for single module projects
+          POSSIBLE_PATHS=(
+            "./build/outputs/bundle/${VARIANT_LOWER}/*.aab"
+            "./build/outputs/bundle/${VARIANT_LOWER}/Test11-${VARIANT_LOWER}.aab"
+            "./build/outputs/bundle/${VARIANT_LOWER}/app-${VARIANT_LOWER}.aab"
+            "./app/build/outputs/bundle/${VARIANT_LOWER}/*.aab"
+          )
+          
+          for path_pattern in "${POSSIBLE_PATHS[@]}"; do
+            if ls $path_pattern 1> /dev/null 2>&1; then
+              AAB_PATH=$(ls $path_pattern | head -1)
+              break
+            fi
+          done
+          
+          # Fallback: search recursively
+          if [ -z "$AAB_PATH" ]; then
             AAB_PATH=$(find . -name "*.aab" -type f | head -1)
           fi
           
@@ -159,7 +205,7 @@ jobs:
             echo "AAB_PATH=$AAB_PATH" >> $GITHUB_ENV
             echo "Found AAB at: $AAB_PATH"
           else
-            echo "No AAB file found"
+            echo "No AAB file found - this is normal if bundle task wasn't run"
             echo "AAB_PATH=" >> $GITHUB_ENV
           fi
 
