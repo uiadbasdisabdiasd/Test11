@@ -45,22 +45,24 @@ jobs:
             exit 1
           fi
 
-      - name: Make gradlew executable
-        run: chmod +x ./gradlew
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
+
+      - name: Generate Gradle Wrapper (if not exists)
+        run: |
+          if [ ! -f "./gradlew" ]; then
+            echo "gradlew not found, generating wrapper..."
+            gradle wrapper --gradle-version=8.2
+            chmod +x ./gradlew
+          else
+            echo "gradlew found, making it executable..."
+            chmod +x ./gradlew
+          fi
 
       - name: Build with Gradle
         env:
           BUILD_VARIANT_INPUT: ${{ github.event.inputs.build_variant || 'Release' }}
-        run: |
-          if [ -f "./gradlew" ]; then
-            ./gradlew :app:assemble${{ env.BUILD_VARIANT_INPUT }} --no-daemon
-          else
-            echo "gradlew not found, trying with gradle command"
-            gradle :app:assemble${{ env.BUILD_VARIANT_INPUT }} --no-daemon
-          fi
+        run: ./gradlew :app:assemble${{ env.BUILD_VARIANT_INPUT }} --no-daemon
 
       - name: Create Release Tag
         id: create_tag
